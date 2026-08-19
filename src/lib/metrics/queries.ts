@@ -13,6 +13,7 @@ import type {
   StageCount,
 } from "@/lib/types";
 import { FILL_FIELDS, FILL_FIELD_COUNT, filledCellsExpression, filledPredicate } from "./fields";
+import { normalisedMapsLinkSql, usableMapsLinkSql } from "./maps-link";
 import { uploaderEmailSql } from "./uploader-sql";
 
 /**
@@ -131,107 +132,116 @@ async function warehouseAggregate(scope?: { email: string }) {
 }
 
 /**
- * Coordinate-level redundancy.
+ * Duplicate detection keyed on (lat, lng, maps link).
  *
- * Three things this deliberately does NOT do, each of which inflated an earlier
- * version of this metric:
+ * The link is the origin of the coordinates — no link in the table resolves to
+ * two different lat/long pairs — so coordinates alone cannot separate a real
+ * duplicate from a pasted-wrong-link error. Requiring the link to match as well
+ * makes a duplicate a high-confidence claim, and isolates the paste errors into
+ * their own bucket. See `maps-link.ts` for why placeholder values are excluded.
  *
- *  1. It counts *excess* rows (cluster size − 1), not every row in a cluster. Two
- *     entries at one point are one warehouse plus one redundant copy, not two
- *     duplicates — counting both roughly doubles the figure.
- *  2. It drops clusters whose rows claim different cities. One exact coordinate
- *     carrying rows labelled Hyderabad, Mumbai and Vijayawada is a broken
- *     coordinate, not a duplicated warehouse; those are reported separately as
- *     suspected bad coordinates so the real problem stays visible.
- *  3. Per employee it counts only rows duplicating *their own* work. Otherwise
- *     whoever happened to upload second is charged for a collision with a
- *     colleague's row, which is not something they can act on.
+ * Within a matching (lat, lng, link) group:
+ *   · all rows name the same city  → a genuine duplicate; excess = size − 1
+ *   · rows name different cities   → the same link pasted onto unrelated entries
  *
- * Exact 6dp collisions are still only a floor — near-duplicates a few metres
- * apart are invisible to this and need a proximity search to catch.
+ * Per employee only their own duplicates count, so nobody is charged for a
+ * colleague uploading the same site. Exact matching is still a floor: near
+ * duplicates a few metres apart need a PostGIS proximity search to catch.
  */
 const CLUSTER_CTE = `
     WITH pts AS (
       SELECT w.id,
              (${UPLOADER_EMAIL}) AS email,
              lower(btrim(w.city)) AS city,
+             ${normalisedMapsLinkSql("w")} AS link,
              round(d.latitude::numeric, 6) AS lat,
              round(d.longitude::numeric, 6) AS lng
       FROM "Warehouse" w
       JOIN "WarehouseData" d ON d."warehouseId" = w.id
       WHERE d.latitude IS NOT NULL AND d.longitude IS NOT NULL
+        AND ${usableMapsLinkSql("w")}
     ),
     grouped AS (
-      SELECT lat, lng, count(*) AS size, count(DISTINCT city) AS cities
-      FROM pts GROUP BY lat, lng
+      SELECT lat, lng, link, count(*) AS size, count(DISTINCT city) AS cities
+      FROM pts GROUP BY lat, lng, link
     ),
     dupes AS (SELECT * FROM grouped WHERE size > 1 AND cities = 1),
-    suspect AS (SELECT * FROM grouped WHERE size > 1 AND cities > 1)`;
+    wrong_link AS (SELECT * FROM grouped WHERE size > 1 AND cities > 1)`;
 
 async function duplicationAggregate(): Promise<DuplicationRate> {
   const [row] = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(`
-    ${CLUSTER_CTE}
-    SELECT (SELECT count(*) FROM pts)::int AS geocoded,
+    ${CLUSTER_CTE},
+    coord_only AS (
+      SELECT lat, lng, count(*) AS n, count(DISTINCT link) AS links
+      FROM pts GROUP BY lat, lng
+    )
+    SELECT (SELECT count(*) FROM pts)::int AS in_scope,
            coalesce((SELECT sum(size - 1) FROM dupes), 0)::int AS excess,
-           (SELECT count(*) FROM dupes)::int AS clusters,
-           coalesce((SELECT sum(size) FROM suspect), 0)::int AS suspect_rows,
-           (SELECT count(*) FROM suspect)::int AS suspect_clusters`);
+           (SELECT count(*) FROM dupes)::int AS groups,
+           coalesce((SELECT sum(size) FROM wrong_link), 0)::int AS wrong_link_rows,
+           (SELECT count(*) FROM wrong_link)::int AS wrong_link_groups,
+           coalesce((SELECT sum(n) FROM coord_only WHERE n > 1 AND links > 1), 0)::int AS same_coord_diff_link,
+           (SELECT count(*) FROM "Warehouse" w WHERE NOT ${usableMapsLinkSql("w")})::int AS no_usable_link`);
 
-  const geocoded = num(row.geocoded);
+  const inScope = num(row.in_scope);
   const excess = num(row.excess);
 
   return {
-    geocoded,
+    inScope,
     duplicated: excess,
-    clusters: num(row.clusters),
-    percent: pct(excess, geocoded),
-    suspectRows: num(row.suspect_rows),
-    suspectClusters: num(row.suspect_clusters),
+    groups: num(row.groups),
+    percent: pct(excess, inScope),
+    wrongLinkRows: num(row.wrong_link_rows),
+    wrongLinkGroups: num(row.wrong_link_groups),
+    sameCoordDifferentLink: num(row.same_coord_diff_link),
+    noUsableLink: num(row.no_usable_link),
   };
 }
 
-/** Per-employee redundancy: their rows that duplicate another row of their own. */
+/** Per-employee: rows duplicating another row of their own, plus their paste errors. */
 async function duplicationByEmployee() {
   const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(`
     ${CLUSTER_CTE},
     sized AS (
-      SELECT p.email, p.lat, p.lng, g.size, g.cities
-      FROM pts p JOIN grouped g ON g.lat = p.lat AND g.lng = p.lng
+      SELECT p.email, p.lat, p.lng, p.link, g.size, g.cities
+      FROM pts p
+      JOIN grouped g ON g.lat = p.lat AND g.lng = p.lng AND g.link = p.link
       WHERE p.email IS NOT NULL
     ),
     own AS (
-      SELECT email, lat, lng, count(*) AS mine
+      SELECT email, lat, lng, link, count(*) AS mine
       FROM sized WHERE size > 1 AND cities = 1
-      GROUP BY 1, 2, 3
-    ),
-    suspect_own AS (
-      SELECT email, count(*) AS n FROM sized WHERE size > 1 AND cities > 1 GROUP BY 1
+      GROUP BY 1, 2, 3, 4
     )
     SELECT t.email,
-           t.geocoded::int AS geocoded,
+           t.in_scope::int AS in_scope,
            coalesce(e.excess, 0)::int AS excess,
-           coalesce(e.clusters, 0)::int AS clusters,
-           coalesce(s.n, 0)::int AS suspect_rows
-    FROM (SELECT email, count(*) AS geocoded FROM sized GROUP BY 1) t
+           coalesce(e.groups, 0)::int AS groups,
+           coalesce(wl.n, 0)::int AS wrong_link_rows
+    FROM (SELECT email, count(*) AS in_scope FROM sized GROUP BY 1) t
     LEFT JOIN (
-      SELECT email, sum(mine - 1) AS excess, count(*) AS clusters
+      SELECT email, sum(mine - 1) AS excess, count(*) AS groups
       FROM own WHERE mine > 1 GROUP BY 1
     ) e ON e.email = t.email
-    LEFT JOIN suspect_own s ON s.email = t.email`);
+    LEFT JOIN (
+      SELECT email, count(*) AS n FROM sized WHERE size > 1 AND cities > 1 GROUP BY 1
+    ) wl ON wl.email = t.email`);
 
   return new Map(
     rows.map((r) => {
-      const geocoded = num(r.geocoded);
+      const inScope = num(r.in_scope);
       const excess = num(r.excess);
       return [
         String(r.email),
         {
-          geocoded,
+          inScope,
           duplicated: excess,
-          clusters: num(r.clusters),
-          percent: pct(excess, geocoded),
-          suspectRows: num(r.suspect_rows),
-          suspectClusters: 0,
+          groups: num(r.groups),
+          percent: pct(excess, inScope),
+          wrongLinkRows: num(r.wrong_link_rows),
+          wrongLinkGroups: 0,
+          sameCoordDifferentLink: 0,
+          noUsableLink: 0,
         } satisfies DuplicationRate,
       ];
     }),
@@ -239,12 +249,14 @@ async function duplicationByEmployee() {
 }
 
 const EMPTY_DUPLICATION: DuplicationRate = {
-  geocoded: 0,
+  inScope: 0,
   duplicated: 0,
-  clusters: 0,
+  groups: 0,
   percent: 0,
-  suspectRows: 0,
-  suspectClusters: 0,
+  wrongLinkRows: 0,
+  wrongLinkGroups: 0,
+  sameCoordDifferentLink: 0,
+  noUsableLink: 0,
 };
 
 export const getCompanyMetrics = cache(async (): Promise<CompanyMetrics> => {

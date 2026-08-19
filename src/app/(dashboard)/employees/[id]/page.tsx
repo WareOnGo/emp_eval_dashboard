@@ -150,7 +150,11 @@ export default async function EmployeePage({ params }: PageProps<"/employees/[id
               meter={Math.min(100, (duplication.percent / TARGETS.duplication.target) * 100)}
               status={dupStatus}
               statusLabel={CEILING_LABEL[dupStatus]}
-              footnote={`${duplication.duplicated} of ${formatCount(duplication.geocoded)} geocoded rows`}
+              footnote={`${duplication.duplicated} of ${formatCount(duplication.inScope)} rows with a map pin${
+                duplication.wrongLinkRows > 0
+                  ? ` · ${duplication.wrongLinkRows} reuse a link from another city`
+                  : ""
+              }`}
             />
           </div>
 

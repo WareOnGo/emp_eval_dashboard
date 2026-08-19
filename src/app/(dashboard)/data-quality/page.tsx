@@ -71,25 +71,38 @@ export default async function DataQualityPage() {
             meter={Math.min(100, (duplication.percent / TARGETS.duplication.target) * 100)}
             status={dupStatus}
             statusLabel={CEILING_LABEL[dupStatus]}
-            footnote={`${duplication.duplicated} redundant rows across ${duplication.clusters} clusters, of ${formatCount(duplication.geocoded)} geocoded`}
+            footnote={`${duplication.duplicated} redundant rows across ${duplication.groups} matched pins, of ${formatCount(duplication.inScope)} in scope`}
           />
         </div>
       </div>
 
       <Card>
         <CardHeader
-          title="Suspected bad coordinates"
-          subtitle="One exact coordinate shared by entries that name different cities"
-          action={`${duplication.suspectClusters} coordinates`}
+          title="Reused map links"
+          subtitle="One Google Maps link pasted onto entries in different cities"
+          action={`${duplication.wrongLinkGroups} links`}
         />
-        <p className="px-5 py-4 text-[13px] leading-relaxed text-ink-2">
-          <span className="text-ink">{duplication.suspectRows} entries</span> sit on{" "}
-          {duplication.suspectClusters} coordinates that are claimed by more than one city — for
-          example one point in Andhra Pradesh carrying entries labelled Hyderabad, Mumbai and
-          Vijayawada. These are wrong coordinates rather than duplicated warehouses, so they are
-          excluded from the duplication figure and listed here instead. They need re-geocoding, not
-          de-duplicating.
-        </p>
+        <div className="space-y-3 px-5 py-4 text-[13px] leading-relaxed text-ink-2">
+          <p>
+            <span className="text-ink">{duplication.wrongLinkRows} entries</span> share a map link
+            with an entry in a different city, across {duplication.wrongLinkGroups} links. One link
+            appears on a Bhiwandi (Maharashtra) and a Jaipur (Rajasthan) entry; another on Hyderabad
+            and Vijayawada. The link is where the coordinates come from, so on at least one entry in
+            each pair both the link and the coordinates are wrong. These need the correct pin, not
+            de-duplicating.
+          </p>
+          <p>
+            A further{" "}
+            <span className="text-ink">{duplication.sameCoordDifferentLink} entries</span> share
+            coordinates but arrived via different links — possibly the same site captured twice, at
+            lower confidence, so they are not counted as duplicates.
+          </p>
+          <p className="text-ink-3">
+            {formatCount(duplication.noUsableLink)} entries have no usable map link at all — empty,
+            or a placeholder such as &ldquo;NA&rdquo;, which is on 19 entries spanning 7 cities.
+            Those cannot be checked for duplication either way.
+          </p>
+        </div>
       </Card>
 
       <Card>

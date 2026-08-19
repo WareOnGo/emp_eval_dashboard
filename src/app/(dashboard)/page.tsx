@@ -160,7 +160,7 @@ export default async function CompanyPage() {
           meter={Math.min(100, (duplication.percent / TARGETS.duplication.target) * 100)}
           status={statusVsCeiling(duplication.percent, TARGETS.duplication.target)}
           statusLabel={CEILING_LABEL[statusVsCeiling(duplication.percent, TARGETS.duplication.target)]}
-          footnote={`${duplication.duplicated} redundant rows across ${duplication.clusters} coordinate clusters`}
+          footnote={`${duplication.duplicated} redundant rows across ${duplication.groups} matched pins`}
         />
       </div>
 
@@ -230,8 +230,9 @@ export default async function CompanyPage() {
         </div>
         <p className="border-t border-line px-5 py-3 text-xs leading-relaxed text-ink-3">
           Visible and duplicated are marked when they miss their thresholds ({"<"}90% visible, over{" "}
-          {2 * TARGETS.duplication.target}% duplicated). Duplication counts only rows that duplicate
-          another entry by the same person, so nobody is charged for a colleague uploading the same
+          {2 * TARGETS.duplication.target}% duplicated). A duplicate needs the same coordinates{" "}
+          <em className="not-italic text-ink-2">and</em> the same Google Maps link, and only counts
+          against the person who uploaded both — nobody is charged for a colleague posting the same
           site.
         </p>
       </Card>

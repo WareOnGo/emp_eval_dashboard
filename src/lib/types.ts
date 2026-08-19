@@ -46,14 +46,19 @@ export type VisibilityRate = {
 };
 
 export type DuplicationRate = {
-  geocoded: number;
-  /** Redundant rows: cluster size − 1, summed. Not every row in a cluster. */
+  /** Rows with both coordinates and a usable maps link — the denominator. */
+  inScope: number;
+  /** Redundant rows: group size − 1, summed. Not every row in a group. */
   duplicated: number;
-  clusters: number;
+  groups: number;
   percent: number;
-  /** Rows at one coordinate but claiming different cities — bad geocoding, not duplicates. */
-  suspectRows: number;
-  suspectClusters: number;
+  /** Same link and coordinates, but the rows name different cities — a paste error. */
+  wrongLinkRows: number;
+  wrongLinkGroups: number;
+  /** Same coordinates via different links: possibly the same site, lower confidence. */
+  sameCoordDifferentLink: number;
+  /** Rows with no usable maps link at all (empty, or a placeholder like "NA"). */
+  noUsableLink: number;
 };
 
 export type FieldFill = {

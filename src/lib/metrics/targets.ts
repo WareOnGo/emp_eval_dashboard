@@ -10,11 +10,12 @@ export const TARGETS = {
   visibility: { baseline: 81.9, target: 98, unit: "%" },
   /**
    * Lower is better; no formal target agreed yet, so this is a working ceiling.
-   * The baseline is the corrected definition: 136 redundant rows of 1,438
-   * geocoded, with the 15 multi-city (bad-coordinate) clusters excluded. The
-   * 20.1% first quoted counted every row in a cluster and folded those in.
+   * Baseline is the (lat, lng, maps link) definition: 99 redundant rows of 1,437
+   * in scope. Earlier readings of the same data gave 20.1% (every row in a
+   * coordinate cluster, paste errors included) and 9.5% (excess rows, coordinates
+   * only) — both overstated it by conflating reused map links with duplicates.
    */
-  duplication: { baseline: 9.5, target: 5, unit: "%" },
+  duplication: { baseline: 6.9, target: 5, unit: "%" },
 } as const;
 
 /** Fields below this fill rate are called out as weak. */

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { signOut } from "@/app/login/actions";
 
 const LINKS = [
   { href: "/", label: "Company" },
@@ -40,9 +41,19 @@ export function Sidebar() {
         })}
       </nav>
 
-      <p className="mt-auto hidden border-t border-line pt-4 text-xs leading-relaxed text-ink-3 md:block">
-        Per-employee figures cover active employees only. Company totals cover all history.
-      </p>
+      <div className="mt-auto hidden border-t border-line pt-4 md:block">
+        <p className="text-xs leading-relaxed text-ink-3">
+          Per-employee figures cover active employees only. Company totals cover all history.
+        </p>
+        <form action={signOut} className="mt-3">
+          <button
+            type="submit"
+            className="text-xs text-ink-3 transition-colors hover:text-ink"
+          >
+            Sign out
+          </button>
+        </form>
+      </div>
     </aside>
   );
 }
