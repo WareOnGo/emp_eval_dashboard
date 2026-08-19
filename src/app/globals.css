@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+/*
+ * Dark-only. One accent (`series`) carries every data mark; the three status
+ * colours are reserved for breaching a target and always ship beside a text
+ * label, never as the only signal. Text uses the three-step ink ramp only —
+ * all three clear AA on every surface here.
+ *
+ * Type scale, used consistently:
+ *   hero      48px/600, proportional figures  — exactly one per page
+ *   value     28px/600, proportional figures  — stat tiles
+ *   title     13px/600  — card headers
+ *   body      13px/400  — table cells, prose
+ *   meta      12px/400  — labels, subtitles, axis ticks
+ * `tabular-nums` only in columns that align vertically.
+ */
+@theme {
+  --color-plane: #0d0d0d;
+  --color-card: #161616;
+  --color-inset: #1f1f1f;
+  --color-line: #262626;
+  --color-line-strong: #333333;
+
+  --color-ink: #f5f5f5;
+  --color-ink-2: #b4b4b0;
+  --color-ink-3: #8a8a86;
+
+  /* Categorical slot 1 — the only series colour in the app. */
+  --color-series: #3987e5;
+
+  /* Status. Fixed, never themed, never used as a series colour. */
+  --color-good: #0ca30c;
+  --color-warn: #fab219;
+  --color-bad: #d03b3b;
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--color-plane);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background-color: color-mix(in oklab, var(--color-series) 35%, transparent);
+}
+
+* {
+  scrollbar-color: var(--color-line-strong) transparent;
+  scrollbar-width: thin;
+}
